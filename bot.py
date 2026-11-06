@@ -16,14 +16,14 @@ RTMP_URL = "rtmp://ssh101.bozztv.com:1935/ssh101"
 STREAM_KEY = os.getenv("STREAM_KEY") or "ztv"
 RTMP_SERVER = f"{RTMP_URL}/{STREAM_KEY}"
 
-M3U_URL = os.getenv("M3U_URL") or "https://raw.githubusercontent.com/gistmedya/0101/refs/heads/main/deneme.m3u"
+M3U_URL = os.getenv("M3U_URL") or "https://raw.githubusercontent.com/sahind01/kubra/refs/heads/main/Filmler/cocuk_filmleri.m3u"
 LOGO_URL = os.getenv("LOGO_URL") or "https://i.hizliresim.com/5uwdmtke.png"
 
-STATE_FILE_NAME = os.getenv("STATE_FILE_NAME", "yesilcam.json")
+STATE_FILE_NAME = os.getenv("STATE_FILE_NAME", "ztv.json")
 GITHUB_STEP_SUMMARY = os.getenv("GITHUB_STEP_SUMMARY")
 
 STREAM_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-STREAM_REFERER = "https://vidmody.com/"
+STREAM_REFERER = "https://ha.vixolity.com/"
 
 # Logo ve yazı opaklık ayarları (0.0 - 1.0 arası)
 LOGO_OPACITY = float(os.getenv("LOGO_OPACITY", "1.0"))
@@ -229,8 +229,8 @@ def start_m3u_stream():
 
         headers_arg = (
             f"User-Agent: {STREAM_USER_AGENT}\r\n"
-            f"Referer: https://vidmody.com/\r\n"
-            f"Origin: https://vidmody.com\r\n"
+            f"Referer: https://ha.vixolity.com/\r\n"
+            f"Origin: https://ha.vixolity.com\r\n"
         )
 
         # Gerçek zamanlı okuma (-re) ve kararlı ağ bağlantısı parametreleri
