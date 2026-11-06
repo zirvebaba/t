@@ -293,7 +293,7 @@ def start_m3u_stream():
             filter_str = (
                 '[0:v]scale=1920:1080:force_original_aspect_ratio=decrease,'
                 'pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black,fps=25[main];'
-                f'[{logo1_input_index}:v]scale=-2:87,format=rgba,'
+                f'[{logo1_input_index}:v]scale=-2:130,format=rgba,'
                 f'colorchannelmixer=aa={LOGO_OPACITY}[logo1];'
                 '[main][logo1]overlay=75:55[tmp];'
                 f'[tmp]{title_drawtext}[v]'
