@@ -16,7 +16,7 @@ RTMP_URL = "rtmp://ssh101.bozztv.com:1935/ssh101"
 STREAM_KEY = os.getenv("STREAM_KEY") or "sadtv"
 RTMP_SERVER = f"{RTMP_URL}/{STREAM_KEY}"
 
-M3U_URL = os.getenv("M3U_URL") or "https://files.catbox.moe/pe4j1o.m3u"
+M3U_URL = os.getenv("M3U_URL") or "https://raw.githubusercontent.com/zirvebaba/t/refs/heads/main/sad.m3u"
 LOGO_URL = os.getenv("LOGO_URL") or "https://i.hizliresim.com/w0617e2g.png"
 
 STATE_FILE_NAME = os.getenv("STATE_FILE_NAME", "sadtv.json")
