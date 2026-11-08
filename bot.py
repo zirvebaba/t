@@ -17,7 +17,7 @@ STREAM_KEY = os.getenv("STREAM_KEY") or "ztv"
 RTMP_SERVER = f"{RTMP_URL}/{STREAM_KEY}"
 
 M3U_URL = os.getenv("M3U_URL") or "https://mutluapk.xyz/ytpro.php?route=%2Fcategory%2FMuzik.m3u"
-LOGO_URL = os.getenv("LOGO_URL") or "https://i.hizliresim.com/5uwdmtke.png"
+LOGO_URL = os.getenv("LOGO_URL") or "https://i.hizliresim.com/gns4rf0d.png"
 
 STATE_FILE_NAME = os.getenv("STATE_FILE_NAME", "ztv.json")
 GITHUB_STEP_SUMMARY = os.getenv("GITHUB_STEP_SUMMARY")
