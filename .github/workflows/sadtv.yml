@@ -7,7 +7,7 @@ on:
 
 # Çift yayın çalışmasını ve çakışmayı önleyen kural
 concurrency:
-  group: digi-stream
+  group: sad-stream
   cancel-in-progress: true
 
 jobs:
@@ -40,7 +40,7 @@ jobs:
     - name: 🚀 Yayını başlat
       env:
         STATE_FILE_NAME: "state_sadtv.json"
-      run: python -u bot1.py
+      run: python -u sad.py
 
     - name: 💾 Son Durumu Release Üzerinde Güncelle
       if: always()
