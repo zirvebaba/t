@@ -12,8 +12,8 @@ import threading
 from collections import deque
 
 # ===================== AYARLAR =====================
-RTMP_URL = "rtmp://ssh101.bozztv.com:1935/ssh101"
-STREAM_KEY = os.getenv("STREAM_KEY") or "ztv"
+RTMP_URL = "rtmp://s3.catcast.tv/live"
+STREAM_KEY = os.getenv("STREAM_KEY") or "twst42?key=27429_50878_140ab6913463d66a"
 RTMP_SERVER = f"{RTMP_URL}/{STREAM_KEY}"
 
 M3U_URL = os.getenv("M3U_URL") or "https://raw.githubusercontent.com/zirvebaba/t/refs/heads/main/sad.m3u"
