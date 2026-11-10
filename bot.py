@@ -17,7 +17,7 @@ RTMP_SERVER = f"{RTMP_URL}/{STREAM_KEY}"
 
 # Doğrudan canlı HLS (.m3u8) akış URL'si — M3U playlist DEĞİL
 HLS_URL = os.getenv("HLS_URL") or (
-    "https://v2.catcast.tv/content/50737/seg-27708703-v1-a1/index.m3u8"
+    "http://145.239.37.125:20458/foramuzik/foramuzik/playlist.m3u8"
 )
 
 # Logo
