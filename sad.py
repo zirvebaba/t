@@ -12,7 +12,7 @@ from collections import deque
 import requests
 
 # ===================== AYARLAR =====================
-RTMP_URL = "rtmp://36bay2.tulix.tv/giatv-sadtv"
+RTMP_URL = "rtmp://sadtv:Mutlu9090@36bay2.tulix.tv/giatv-sadtv"
 STREAM_KEY = os.getenv("STREAM_KEY") or "sadtv"
 RTMP_SERVER = f"{RTMP_URL}/{STREAM_KEY}"
 
