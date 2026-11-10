@@ -11,7 +11,7 @@ from collections import deque
 
 # ===================== AYARLAR =====================
 # RTMP hedefi
-RTMP_URL = "rtmp://s3.catcast.tv/live"
+RTMP_URL = "rtmp://s2.catcast.tv/live"
 STREAM_KEY = os.getenv("STREAM_KEY") or "twst42?key=27429_50878_140ab6913463d66a"
 RTMP_SERVER = f"{RTMP_URL}/{STREAM_KEY}"
 
