@@ -13,7 +13,7 @@ import requests
 
 # ===================== AYARLAR =====================
 RTMP_URL = "rtmp://rtmp.mutluapk.xyz/live"
-STREAM_KEY = os.getenv("STREAM_KEY") or "Zemmedya-8555173610"
+STREAM_KEY = os.getenv("STREAM_KEY") or "Mutlumedya?key=Zemmedya-2921541797"
 RTMP_SERVER = f"{RTMP_URL}/{STREAM_KEY}"
 
 # Canlı M3U8 kaynağı (tek URL)
