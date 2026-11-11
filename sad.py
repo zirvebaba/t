@@ -12,7 +12,7 @@ from collections import deque
 import requests
 
 # ===================== AYARLAR =====================
-RTMP_URL = "rtmp://rtmp.mutluapk.xyz/live"
+RTMP_URL = "rtmp://rtmp.mutluapk.xyz/live/Mutlumedya?key"
 STREAM_KEY = os.getenv("STREAM_KEY") or "Zemmedya-5863834595"
 RTMP_SERVER = f"{RTMP_URL}/{STREAM_KEY}"
 
