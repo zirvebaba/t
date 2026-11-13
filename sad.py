@@ -12,13 +12,16 @@ from collections import deque
 import requests
 
 # ===================== AYARLAR =====================
-RTMP_URL = "rtmp://rtmp.mutluapk.xyz/live"
-STREAM_KEY = os.getenv("STREAM_KEY") or "Mutlumedya?key=Zemmedya-2921541797"
+RTMP_URL = "rtmp://rtmp.zemmedya.com/zem"
+STREAM_KEY = os.getenv("STREAM_KEY") or "Demir?key=Zemmedya-7449497148"
 RTMP_SERVER = f"{RTMP_URL}/{STREAM_KEY}"
 
 # Canlı M3U8 kaynağı (tek URL)
 M3U8_URL = os.getenv("M3U8_URL") or "https://141.94.142.156:3205/stream/play.m3u8"
 LOGO_URL = os.getenv("LOGO_URL") or "https://i.hizliresim.com/w0617e2g.png"
+
+# YENİ: Alt GIF overlay
+GIF_URL = os.getenv("GIF_URL") or "https://i.hizliresim.com/gtvuxoda.gif"
 
 GITHUB_STEP_SUMMARY = os.getenv("GITHUB_STEP_SUMMARY")
 
@@ -31,6 +34,7 @@ STREAM_REFERER = os.getenv("STREAM_REFERER", "https://xtream.mutluapk.xyz/")
 # Overlay ayarları
 LOGO_OPACITY = float(os.getenv("LOGO_OPACITY", "1.0"))
 TEXT_OPACITY = float(os.getenv("TEXT_OPACITY", "1.0"))
+GIF_OPACITY = float(os.getenv("GIF_OPACITY", "1.0"))
 BOLD_FONT_PATH = os.getenv("BOLD_FONT_PATH", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf")
 
 # Ekranda görünecek başlık (sabit). İstersen env ile değiştir.
@@ -54,18 +58,28 @@ def format_hms(total_seconds):
     return f"{hrs:02d}:{mins:02d}:{secs:02d}"
 
 
-def download_logo():
+def download_file(url, filename, label):
     headers = {'User-Agent': STREAM_USER_AGENT}
     try:
-        response = requests.get(LOGO_URL, headers=headers, timeout=15)
+        response = requests.get(url, headers=headers, timeout=20)
         if response.status_code == 200 and len(response.content) > 0:
-            with open('logo.png', 'wb') as f:
+            with open(filename, 'wb') as f:
                 f.write(response.content)
-            print("✅ Logo başarıyla indirildi.")
+            print(f"✅ {label} başarıyla indirildi ({len(response.content)} bayt).")
+            return True
         else:
-            print(f"⚠️ Logo indirilemedi (HTTP {response.status_code}).")
+            print(f"⚠️ {label} indirilemedi (HTTP {response.status_code}).")
     except Exception as e:
-        print(f"⚠️ Logo indirme hatası: {e}")
+        print(f"⚠️ {label} indirme hatası: {e}")
+    return False
+
+
+def download_logo():
+    download_file(LOGO_URL, 'logo.png', 'Logo')
+
+
+def download_gif():
+    download_file(GIF_URL, 'bottom.gif', 'Alt GIF')
 
 
 def write_title_file(title):
@@ -103,7 +117,7 @@ def write_step_summary(title, seconds, status="🟢 Yayında"):
         print(f"⚠️ Step summary yazma hatası: {e}")
 
 
-def build_ffmpeg_command(has_logo):
+def build_ffmpeg_command(has_logo, has_gif):
     """Canlı M3U8 -> RTMP için FFmpeg komutunu oluşturur."""
     headers_arg = (
         f"User-Agent: {STREAM_USER_AGENT}\r\n"
@@ -111,8 +125,6 @@ def build_ffmpeg_command(has_logo):
         f"Origin: {STREAM_REFERER.rstrip('/')}\r\n"
     )
 
-    # Canlı yayın için: -re YOK, -ss YOK.
-    # -reconnect* ile segment yenilenmelerinde bile kopmadan devam eder.
     input_options = [
         '-headers', headers_arg,
         '-protocol_whitelist', 'file,http,https,tcp,tls,crypto',
@@ -131,35 +143,67 @@ def build_ffmpeg_command(has_logo):
 
     input_args = input_options + ['-i', M3U8_URL]
 
+    # Ek input'lar (sıra önemli: index 0 = ana video)
+    extra_inputs = []
+    next_idx = 1
+
+    logo_idx = None
+    if has_logo:
+        extra_inputs += ['-i', 'logo.png']
+        logo_idx = next_idx
+        next_idx += 1
+
+    gif_idx = None
+    if has_gif:
+        # GIF'i sonsuz döngüde oynat + süresini canlı yayınla eşitlemek için -stream_loop -1
+        extra_inputs += ['-stream_loop', '-1', '-i', 'bottom.gif']
+        gif_idx = next_idx
+        next_idx += 1
+
+    # --- Filter graph ---
+    # 1) Ana videoyu 1920x1080'e ölçekle/pad et
+    parts = [
+        '[0:v]scale=1920:1080:force_original_aspect_ratio=decrease,'
+        'pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black,fps=25[main]'
+    ]
+
+    # 2) Logo varsa hazırla
+    if has_logo:
+        parts.append(
+            f'[{logo_idx}:v]scale=-2:130,format=rgba,'
+            f'colorchannelmixer=aa={LOGO_OPACITY}[logo]'
+        )
+        parts.append('[main][logo]overlay=75:55[tmp1]')
+        current = '[tmp1]'
+    else:
+        current = '[main]'
+
+    # 3) Alt GIF varsa hazırla ve alt-ortaya yerleştir
+    if has_gif:
+        # GIF'i tam 320x50'ye ölçekle, alpha koru
+        parts.append(
+            f'[{gif_idx}:v]scale=320:50:force_original_aspect_ratio=decrease,'
+            f'pad=320:50:(ow-iw)/2:(oh-ih)/2:color=black@0,'
+            f'format=rgba,colorchannelmixer=aa={GIF_OPACITY}[gif]'
+        )
+        # x = ortala, y = en alt (main_h - overlay_h)
+        parts.append(f'{current}[gif]overlay=x=(main_w-overlay_w)/2:y=main_h-overlay_h[tmp2]')
+        current = '[tmp2]'
+
+    # 4) Başlık yazısı
     title_drawtext = (
         f"drawtext=textfile='title.txt':reload=1:fontfile='{BOLD_FONT_PATH}':"
         f"fontcolor=white@{TEXT_OPACITY}:fontsize=25:"
         f"x=80:y=main_h-th-55"
     )
+    parts.append(f'{current}{title_drawtext}[v]')
 
-    if has_logo:
-        logo_inputs = ['-i', 'logo.png']
-        logo_idx = 1
-        filter_str = (
-            '[0:v]scale=1920:1080:force_original_aspect_ratio=decrease,'
-            'pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black,fps=25[main];'
-            f'[{logo_idx}:v]scale=-2:130,format=rgba,'
-            f'colorchannelmixer=aa={LOGO_OPACITY}[logo];'
-            '[main][logo]overlay=75:55[tmp];'
-            f'[tmp]{title_drawtext}[v]'
-        )
-    else:
-        logo_inputs = []
-        filter_str = (
-            '[0:v]scale=1920:1080:force_original_aspect_ratio=decrease,'
-            'pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black,fps=25[main];'
-            f'[main]{title_drawtext}[v]'
-        )
+    filter_str = ';'.join(parts)
 
     command = (
         ['ffmpeg']
         + input_args
-        + logo_inputs
+        + extra_inputs
         + [
             '-filter_complex', filter_str,
             '-map', '[v]',
@@ -186,7 +230,8 @@ def build_ffmpeg_command(has_logo):
 def run_ffmpeg_once():
     """Tek bir FFmpeg oturumu çalıştırır. Bittiğinde/çöktüğünde return code döner."""
     has_logo = os.path.exists('logo.png') and os.path.getsize('logo.png') > 0
-    command = build_ffmpeg_command(has_logo)
+    has_gif = os.path.exists('bottom.gif') and os.path.getsize('bottom.gif') > 0
+    command = build_ffmpeg_command(has_logo, has_gif)
 
     print("▶ FFmpeg başlatıldı, canlı M3U8 -> RTMP iletiliyor...")
     process = subprocess.Popen(
@@ -199,7 +244,6 @@ def run_ffmpeg_once():
     current_stream_seconds = 0.0
     stderr_tail = deque(maxlen=40)
 
-    # Watchdog: ilerleme gelmezse süreci öldür
     last_progress_time = [time.time()]
 
     def _watchdog(proc=process, progress_ref=last_progress_time):
@@ -245,12 +289,14 @@ def start_live_stream():
     print("📺 Canlı M3U8 -> RTMP Aktarım")
     print(f"🔧 Kaynak M3U8 : {M3U8_URL}")
     print(f"🔧 Logo        : {LOGO_URL}")
+    print(f"🔧 Alt GIF     : {GIF_URL}")
     print(f"🔧 RTMP hedef  : {RTMP_SERVER}")
     print(f"🔧 Başlık      : {STREAM_TITLE}")
     print(f"🔧 Decoder thr : {DECODER_THREADS}")
     print("=" * 60)
 
     download_logo()
+    download_gif()
     write_title_file(STREAM_TITLE)
 
     while True:
