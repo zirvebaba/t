@@ -182,8 +182,8 @@ def build_ffmpeg_command(has_logo, has_gif):
     if has_gif:
         # GIF'i tam 320x50'ye ölçekle, alpha koru
         parts.append(
-            f'[{gif_idx}:v]scale=1800:150:force_original_aspect_ratio=decrease,'
-            f'pad=1800:150:(ow-iw)/2:(oh-ih)/2:color=black@0,'
+            f'[{gif_idx}:v]scale=1000:150:force_original_aspect_ratio=decrease,'
+            f'pad=1000:150:(ow-iw)/2:(oh-ih)/2:color=black@0,'
             f'format=rgba,colorchannelmixer=aa={GIF_OPACITY}[gif]'
         )
         # x = ortala, y = en alt (main_h - overlay_h)
