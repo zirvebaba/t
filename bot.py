@@ -2,258 +2,301 @@
 # -*- coding: utf-8 -*-
 
 import subprocess
+import sys
 import time
 import os
 import re
-import requests
 import threading
 from collections import deque
 
-# ===================== AYARLAR =====================
-# RTMP hedefi
-RTMP_URL = "rtmp://s2.catcast.tv/live"
-STREAM_KEY = os.getenv("STREAM_KEY") or "twst42?key=27429_50878_140ab6913463d66a"
-RTMP_SERVER = f"{RTMP_URL}/{STREAM_KEY}"
+import requests
 
-# Doğrudan canlı HLS (.m3u8) akış URL'si — M3U playlist DEĞİL
-HLS_URL = os.getenv("HLS_URL") or (
-    "http://145.239.37.125:20458/foramuzik/foramuzik/playlist.m3u8"
-)
+# ===================== ORTAK AYARLAR =====================
+RTMP_URL = "rtmp://rtmp.zemmedya.com/zem"
 
-# Logo
-LOGO_URL = os.getenv("LOGO_URL") or "https://i.hizliresim.com/gns4rf0d.png"
-
-# GitHub Actions step summary (opsiyonel)
 GITHUB_STEP_SUMMARY = os.getenv("GITHUB_STEP_SUMMARY")
 
 STREAM_USER_AGENT = (
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-    "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 )
-STREAM_REFERER = "https://ha.vixolity.com/"
-STREAM_ORIGIN = "https://ha.vixolity.com"
 
-# Logo ve yazı opaklık ayarları (0.0 - 1.0)
+# Overlay ayarları
 LOGO_OPACITY = float(os.getenv("LOGO_OPACITY", "1.0"))
 TEXT_OPACITY = float(os.getenv("TEXT_OPACITY", "1.0"))
-BOLD_FONT_PATH = os.getenv(
-    "BOLD_FONT_PATH", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
-)
+BOLD_FONT_PATH = os.getenv("BOLD_FONT_PATH", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf")
 
-# Decoder thread sayısı (H.264 "non-existing PPS" hatalarını azaltır)
+# Decoder thread sayısı
 DECODER_THREADS = os.getenv("DECODER_THREADS", "1")
 
-# Watchdog: bu kadar saniye ilerleme (time=) gelmezse FFmpeg donmuş kabul edilir
-WATCHDOG_TIMEOUT_SECONDS = int(os.getenv("WATCHDOG_TIMEOUT_SECONDS", "60"))
+# Watchdog: bu süre boyunca FFmpeg'den ilerleme (time=) gelmezse donmuş sayılır
+WATCHDOG_TIMEOUT_SECONDS = int(os.getenv("WATCHDOG_TIMEOUT_SECONDS", "45"))
 
-# Yeniden bağlanma parametreleri
-MAX_RETRY_DELAY_SECONDS = int(os.getenv("MAX_RETRY_DELAY_SECONDS", "60"))
-BASE_RETRY_DELAY_SECONDS = int(os.getenv("BASE_RETRY_DELAY_SECONDS", "5"))
-
-# Yayın başlığı (drawtext'te gösterilecek)
-STREAM_TITLE = os.getenv("STREAM_TITLE", "Canlı Yayın")
+# Yeniden bağlanma gecikmesi (sabit)
+RECONNECT_DELAY_SECONDS = int(os.getenv("RECONNECT_DELAY_SECONDS", "5"))
 
 
-# ===================== YARDIMCI FONKSİYONLAR =====================
+# ===================== 5 YAYIN KONFİGÜRASYONU =====================
+# Her yayın bağımsız. İstediğin kadar ekleyip çıkarabilirsin.
+STREAMS = [
+    {
+        "id": 1,
+        "name": "Yayın 1",
+        "m3u8": os.getenv("M3U8_URL_1") or "https://v2.catcast.tv/content/50732/seg-27708703-v1-a1/index.m3u8",
+        "logo": os.getenv("LOGO_URL_1") or "https://i.hizliresim.com/5uwdmtke.png",
+        "referer": os.getenv("STREAM_REFERER_1", "https://Google.com/"),
+        "stream_key": os.getenv("STREAM_KEY_1") or "ozgurluk?key=Zemmedya-9397554259",
+        "title": os.getenv("STREAM_TITLE_1", "Canlı Yayın 1"),
+    },
+    {
+        "id": 2,
+        "name": "Yayın 2",
+        "m3u8": os.getenv("M3U8_URL_2") or "https://v2.catcast.tv/content/50733/seg-27708703-v1-a1/index.m3u8",
+        "logo": os.getenv("LOGO_URL_2") or "https://i.hizliresim.com/nfphas7u.png",
+        "referer": os.getenv("STREAM_REFERER_2", "https://Google.com/"),
+        "stream_key": os.getenv("STREAM_KEY_2") or "zmedya?key=Zemmedya-1149358454",
+        "title": os.getenv("STREAM_TITLE_2", "Canlı Yayın 2"),
+    },
+    {
+        "id": 3,
+        "name": "Yayın 3",
+        "m3u8": os.getenv("M3U8_URL_3") or "https://141.94.142.156:3205/stream/play.m3u8",
+        "logo": os.getenv("LOGO_URL_3") or "https://i.hizliresim.com/on1bgkjg.png",
+        "referer": os.getenv("STREAM_REFERER_3", "https://Google.com/"),
+        "stream_key": os.getenv("STREAM_KEY_3") or "z1medya?key=Zemmedya-2873560829",
+        "title": os.getenv("STREAM_TITLE_3", "Canlı Yayın 3"),
+    },
+    {
+        "id": 4,
+        "name": "Yayın 4",
+        "m3u8": os.getenv("M3U8_URL_4") or "https://141.94.142.156:3205/stream/play.m3u8",
+        "logo": os.getenv("LOGO_URL_4") or "https://i.hizliresim.com/w0617e2g.png",
+        "referer": os.getenv("STREAM_REFERER_4", "https://Google.com/"),
+        "stream_key": os.getenv("STREAM_KEY_4") or "Mutlumedya?key=Zemmedya-29797",
+        "title": os.getenv("STREAM_TITLE_4", "Canlı Yayın 4"),
+    },
+    {
+        "id": 5,
+        "name": "Yayın 5",
+        "m3u8": os.getenv("M3U8_URL_5") or "https://141.94.142.156:3205/stream/play.m3u8",
+        "logo": os.getenv("LOGO_URL_5") or "https://i.hizliresim.com/w0617e2g.png",
+        "referer": os.getenv("STREAM_REFERER_5", "https://Google.com/"),
+        "stream_key": os.getenv("STREAM_KEY_5") or "Mutlumedya?key=Zemmedya-292797",
+        "title": os.getenv("STREAM_TITLE_5", "Canlı Yayın 5"),
+    },
+]
+
+
+# ===================== YARDIMCILAR =====================
 def format_hms(total_seconds):
-    total_seconds = max(0, int(total_seconds))
+    total_seconds = int(total_seconds)
     hrs = total_seconds // 3600
     mins = (total_seconds % 3600) // 60
     secs = total_seconds % 60
     return f"{hrs:02d}:{mins:02d}:{secs:02d}"
 
 
-def download_logo():
-    headers = {"User-Agent": STREAM_USER_AGENT}
+def download_file(url, filename, label, stream_id):
+    headers = {'User-Agent': STREAM_USER_AGENT}
     try:
-        response = requests.get(LOGO_URL, headers=headers, timeout=15)
+        response = requests.get(url, headers=headers, timeout=20)
         if response.status_code == 200 and len(response.content) > 0:
-            with open("logo.png", "wb") as f:
+            with open(filename, 'wb') as f:
                 f.write(response.content)
-            print("✅ Logo başarıyla indirildi.")
+            print(f"✅ [{stream_id}] {label} başarıyla indirildi.")
+            return True
         else:
-            print(f"⚠️ Logo indirilemedi (HTTP {response.status_code}).")
+            print(f"⚠️ [{stream_id}] {label} indirilemedi (HTTP {response.status_code}).")
     except Exception as e:
-        print(f"⚠️ Logo indirme hatası: {e}")
+        print(f"⚠️ [{stream_id}] {label} indirme hatası: {e}")
+    return False
 
 
-def write_title_file(title):
+def write_title_file(title, filename):
     try:
-        with open("title.txt", "w", encoding="utf-8") as f:
+        with open(filename, 'w', encoding='utf-8') as f:
             f.write(title)
     except Exception as e:
         print(f"⚠️ Başlık dosyası yazma hatası: {e}")
 
 
-def print_dashboard(title, seconds, status="🟢 Yayında"):
+def print_dashboard(stream_id, title, seconds, status="🟢 Yayında"):
     print("┌" + "─" * 58 + "┐")
+    print(f"│ 🆔 Yayın No       : {stream_id:<36} │")
     print(f"│ 🎬 İçerik         : {title[:36]:<36} │")
     print(f"│ ⏱️  Geçen Süre     : {format_hms(seconds):<36} │")
     print(f"│ 📡 Durum          : {status:<36} │")
     print("└" + "─" * 58 + "┘")
 
 
-def write_step_summary(title, seconds, status="🟢 Yayında"):
+def write_step_summary(streams_state):
+    """
+    streams_state: {stream_id: {"title":..., "seconds":..., "status":..., "name":...}}
+    GitHub Actions Step Summary'yi tüm yayınlar için tek tablo olarak yazar.
+    """
     if not GITHUB_STEP_SUMMARY:
         return
     try:
-        content = (
-            "## 📺 Canlı Yayın Durumu\n\n"
-            "| Alan | Değer |\n"
-            "|---|---|\n"
-            f"| 🎬 İçerik | {title} |\n"
-            f"| ⏱️ Geçen süre | {format_hms(seconds)} (sa:dk:sn) |\n"
-            f"| 📡 Durum | {status} |\n"
-            f"| 🕒 Son güncelleme | {time.strftime('%Y-%m-%d %H:%M:%S')} |\n"
-        )
+        lines = [
+            "## 📺 Canlı Yayın Durumu (5 Bağımsız Yayın)\n",
+            "| # | Yayın | ⏱️ Süre | 📡 Durum |",
+            "|---|---|---|---|",
+        ]
+        for sid in sorted(streams_state.keys()):
+            s = streams_state[sid]
+            lines.append(
+                f"| {sid} | {s.get('name', '-')} | {format_hms(s.get('seconds', 0))} | {s.get('status', '-')} |"
+            )
+        lines.append(f"\n🕒 Son güncelleme: {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
         with open(GITHUB_STEP_SUMMARY, "w", encoding="utf-8") as f:
-            f.write(content)
+            f.write("\n".join(lines))
     except Exception as e:
         print(f"⚠️ Step summary yazma hatası: {e}")
 
 
-def build_ffmpeg_command(has_logo):
-    """Canlı HLS akışını RTMP'ye aktaran FFmpeg komutunu oluşturur."""
+# ===================== FFMPEG KOMUTU =====================
+def build_ffmpeg_command(cfg, has_logo, logo_file, title_file):
+    rtmp_server = f"{RTMP_URL}/{cfg['stream_key']}"
 
     headers_arg = (
         f"User-Agent: {STREAM_USER_AGENT}\r\n"
-        f"Referer: {STREAM_REFERER}\r\n"
-        f"Origin: {STREAM_ORIGIN}\r\n"
+        f"Referer: {cfg['referer']}\r\n"
+        f"Origin: {cfg['referer'].rstrip('/')}\r\n"
     )
 
-    # Canlı HLS için input seçenekleri — -ss YOK (canlı yayında geri sarma yok)
     input_options = [
-        "-re",  # Gerçek zamanlı okuma
-        "-headers", headers_arg,
-        "-protocol_whitelist", "file,http,https,tcp,tls,crypto",
-        "-err_detect", "ignore_err",
-        "-fflags", "+genpts+discardcorrupt",
-        "-thread_queue_size", "1024",
-        "-analyzeduration", "20000000",  # Anahtar kare analizi için artırıldı
-        "-probesize", "20000000",
-        "-live_start_index", "-1",       # Canlı kenardan başla
-        "-reconnect", "1",
-        "-reconnect_at_eof", "1",
-        "-reconnect_streamed", "1",
-        "-reconnect_delay_max", "10",
-        "-rw_timeout", "15000000",
-        "-threads", DECODER_THREADS,
-        "-i", HLS_URL,
+        '-headers', headers_arg,
+        '-protocol_whitelist', 'file,http,https,tcp,tls,crypto',
+        '-fflags', '+genpts+discardcorrupt',
+        '-err_detect', 'ignore_err',
+        '-thread_queue_size', '1024',
+        '-analyzeduration', '10000000',
+        '-probesize', '10000000',
+        '-reconnect', '1',
+        '-reconnect_streamed', '1',
+        '-reconnect_at_eof', '1',
+        '-reconnect_delay_max', '5',
+        '-rw_timeout', '15000000',
+        '-threads', DECODER_THREADS,
     ]
 
-    # Filtre zinciri
+    input_args = input_options + ['-i', cfg['m3u8']]
+
     title_drawtext = (
-        f"drawtext=textfile='title.txt':reload=1:"
-        f"fontfile='{BOLD_FONT_PATH}':"
+        f"drawtext=textfile='{title_file}':reload=1:fontfile='{BOLD_FONT_PATH}':"
         f"fontcolor=white@{TEXT_OPACITY}:fontsize=25:"
         f"x=80:y=main_h-th-55"
     )
 
-    logo_inputs = []
-    logo_input_index = 1
     if has_logo:
-        logo_inputs = ["-i", "logo.png"]
+        logo_inputs = ['-i', logo_file]
+        logo_idx = 1
         filter_str = (
-            "[0:v]scale=1920:1080:force_original_aspect_ratio=decrease,"
-            "pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black,fps=25[main];"
-            f"[{logo_input_index}:v]scale=-2:130,format=rgba,"
-            f"colorchannelmixer=aa={LOGO_OPACITY}[logo1];"
-            "[main][logo1]overlay=75:55[tmp];"
-            f"[tmp]{title_drawtext}[v]"
+            '[0:v]scale=1920:1080:force_original_aspect_ratio=decrease,'
+            'pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black,fps=25[main];'
+            f'[{logo_idx}:v]scale=-2:130,format=rgba,'
+            f'colorchannelmixer=aa={LOGO_OPACITY}[logo];'
+            '[main][logo]overlay=75:55[tmp];'
+            f'[tmp]{title_drawtext}[v]'
         )
     else:
+        logo_inputs = []
         filter_str = (
-            "[0:v]scale=1920:1080:force_original_aspect_ratio=decrease,"
-            "pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black,fps=25[main];"
-            f"[main]{title_drawtext}[v]"
+            '[0:v]scale=1920:1080:force_original_aspect_ratio=decrease,'
+            'pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black,fps=25[main];'
+            f'[main]{title_drawtext}[v]'
         )
 
     command = (
-        ["ffmpeg"]
-        + input_options
+        ['ffmpeg']
+        + input_args
         + logo_inputs
         + [
-            "-dn",  # timed_id3 gibi veri akışlarını çıktıya dahil etme
-            "-filter_complex", filter_str,
-            "-map", "[v]",
-            "-map", "0:a:0?",   # Ses akışı opsiyonel
-            "-c:v", "libx264",
-            "-preset", "veryfast",
-            "-pix_fmt", "yuv420p",
-            "-r", "25",
-            "-b:v", "2500k",
-            "-maxrate", "2500k",
-            "-bufsize", "3000k",
-            "-g", "50",
-            "-c:a", "aac",
-            "-b:a", "128k",
-            "-ac", "2",
-            "-ar", "44100",
-            "-max_interleave_delta", "1000000",  # A/V senkron güvenliği
-            "-f", "flv",
-            RTMP_SERVER,
+            '-filter_complex', filter_str,
+            '-map', '[v]',
+            '-map', '0:a:0?',
+            '-c:v', 'libx264',
+            '-preset', 'veryfast',
+            '-pix_fmt', 'yuv420p',
+            '-r', '25',
+            '-b:v', '2500k',
+            '-maxrate', '2500k',
+            '-bufsize', '3000k',
+            '-g', '50',
+            '-c:a', 'aac',
+            '-b:a', '128k',
+            '-ac', '2',
+            '-ar', '44100',
+            '-f', 'flv',
+            rtmp_server
         ]
     )
     return command
 
 
-# ===================== ANA DÖNGÜ =====================
-def start_stream():
-    print(f"🔧 HLS kaynağı      : {HLS_URL}")
-    print(f"🔧 Logo             : {LOGO_URL}")
-    print(f"🔧 RTMP hedefi      : {RTMP_SERVER}")
-    print(f"🔧 Decoder thread   : {DECODER_THREADS}")
-    print(f"🔧 Watchdog timeout : {WATCHDOG_TIMEOUT_SECONDS}s")
+# ===================== TEK YAYIN ÇALIŞTIRICI =====================
+def run_single_stream(cfg, state, state_lock):
+    """
+    Tek bir yayını sonsuza kadar çalıştırır. Kendi içinde retry yapar.
+    Diğer yayınlardan tamamen bağımsızdır.
+    """
+    sid = cfg['id']
+    logo_file = f"logo_{sid}.png"
+    title_file = f"title_{sid}.txt"
 
-    download_logo()
-    write_title_file(STREAM_TITLE)
+    print("=" * 60)
+    print(f"📺 [{sid}] {cfg['name']} başlatılıyor")
+    print(f"🔧 [{sid}] M3U8 : {cfg['m3u8']}")
+    print(f"🔧 [{sid}] RTMP : {RTMP_URL}/{cfg['stream_key']}")
+    print("=" * 60)
 
-    has_logo = os.path.exists("logo.png") and os.path.getsize("logo.png") > 0
-    if has_logo:
-        print("✅ Logo hazır, yayına eklenecek.")
-    else:
-        print("ℹ️ Logo yok, yayın logosuz devam edecek.")
-
-    consecutive_failures = 0
+    # Logo ve başlık dosyalarını hazırla
+    download_file(cfg['logo'], logo_file, 'Logo', sid)
+    write_title_file(cfg['title'], title_file)
 
     while True:
-        print("=" * 60)
-        print("📺 Canlı HLS → RTMP Aktarımı (1080p 25fps @ 2500k)")
-        print(f"🎬 İçerik: {STREAM_TITLE}")
-        print("=" * 60)
+        # Durumu güncelle
+        with state_lock:
+            state[sid] = {
+                "name": cfg['name'],
+                "title": cfg['title'],
+                "seconds": 0,
+                "status": "🟡 Bağlanılıyor",
+            }
 
-        print_dashboard(STREAM_TITLE, 0, status="🟡 Başlatılıyor")
-        write_step_summary(STREAM_TITLE, 0, status="🟡 Başlatılıyor")
+        has_logo = os.path.exists(logo_file) and os.path.getsize(logo_file) > 0
+        command = build_ffmpeg_command(cfg, has_logo, logo_file, title_file)
 
-        command = build_ffmpeg_command(has_logo)
-        print("▶ FFmpeg başlatıldı...")
+        print(f"▶ [{sid}] FFmpeg başlatıldı.")
+        try:
+            process = subprocess.Popen(
+                command,
+                stderr=subprocess.PIPE,
+                universal_newlines=True
+            )
+        except Exception as e:
+            print(f"❌ [{sid}] FFmpeg başlatma hatası: {e}")
+            time.sleep(RECONNECT_DELAY_SECONDS)
+            continue
 
-        process = subprocess.Popen(
-            command, stderr=subprocess.PIPE, universal_newlines=True
-        )
-
-        stderr_tail = deque(maxlen=50)
+        last_dashboard_time = time.time()
+        current_stream_seconds = 0.0
+        stderr_tail = deque(maxlen=30)
         last_progress_time = [time.time()]
-        stream_start_time = time.time()
 
+        # Watchdog (bu yayına özel)
         def _watchdog(proc=process, progress_ref=last_progress_time):
             while proc.poll() is None:
                 time.sleep(5)
                 if time.time() - progress_ref[0] > WATCHDOG_TIMEOUT_SECONDS:
-                    print(
-                        f"🚨 Watchdog: {WATCHDOG_TIMEOUT_SECONDS} saniyedir "
-                        f"ilerleme yok, FFmpeg donmuş. Süreç öldürülüyor."
-                    )
+                    print(f"🚨 [{sid}] Watchdog: {WATCHDOG_TIMEOUT_SECONDS}s ilerleme yok, sonlandırılıyor.")
                     try:
                         proc.kill()
                     except Exception as e:
-                        print(f"⚠️ Watchdog kill hatası: {e}")
+                        print(f"⚠️ [{sid}] Watchdog kill hatası: {e}")
                     break
 
-        watchdog_thread = threading.Thread(target=_watchdog, daemon=True)
-        watchdog_thread.start()
-
-        last_dashboard_time = time.time()
+        threading.Thread(target=_watchdog, daemon=True).start()
 
         while True:
             line = process.stderr.readline()
@@ -264,69 +307,103 @@ def start_stream():
                 stderr_tail.append(line.rstrip())
 
             if "time=" in line:
-                time_match = re.search(r"time=(\d+):(\d+):(\d+\.\d+)", line)
-                if time_match:
-                    hrs, mins, secs = time_match.groups()
-                    played_seconds = (
-                        int(hrs) * 3600 + int(mins) * 60 + float(secs)
-                    )
+                m = re.search(r'time=(\d+):(\d+):(\d+\.\d+)', line)
+                if m:
+                    hrs, mins, secs = m.groups()
+                    current_stream_seconds = int(hrs) * 3600 + int(mins) * 60 + float(secs)
+
                     now = time.time()
                     last_progress_time[0] = now
 
+                    # Durum güncelle
+                    with state_lock:
+                        state[sid] = {
+                            "name": cfg['name'],
+                            "title": cfg['title'],
+                            "seconds": current_stream_seconds,
+                            "status": "🟢 Yayında",
+                        }
+
                     if now - last_dashboard_time > 30:
-                        print_dashboard(STREAM_TITLE, played_seconds)
-                        write_step_summary(STREAM_TITLE, played_seconds)
+                        print_dashboard(sid, cfg['title'], current_stream_seconds)
                         last_dashboard_time = now
 
-        # Süreç sona erdi
-        total_seconds = int(time.time() - stream_start_time)
-        returncode = process.returncode
+        retcode = process.returncode
 
-        if returncode == 0:
-            print("✅ FFmpeg normal şekilde kapandı (kaynak bitti veya durduruldu).")
-            write_step_summary(
-                STREAM_TITLE, total_seconds, status="✅ Bitti"
-            )
-            # Canlı yayında kaynak "bitmez" ama normal kapanma olduysa kısa bekle
-            time.sleep(5)
-            consecutive_failures = 0
-            continue
-
-        # Hata durumu
-        if returncode == -6:
-            print("⚠️ FFmpeg SIGABRT (decoder assertion) ile çöktü.")
-        elif returncode == -9:
-            print("⚠️ FFmpeg watchdog tarafından öldürüldü (donma).")
-
-        print(f"⚠️ Yayın koptu (Return Code: {returncode}).")
+        if retcode == 0:
+            print(f"ℹ️ [{sid}] FFmpeg normal sonlandı, yeniden bağlanılıyor...")
+        elif retcode == -6:
+            print(f"⚠️ [{sid}] FFmpeg SIGABRT.")
+        elif retcode == -9:
+            print(f"⚠️ [{sid}] FFmpeg watchdog tarafından sonlandırıldı (donma).")
+        else:
+            print(f"⚠️ [{sid}] FFmpeg çöktü (Return Code: {retcode}).")
 
         if stderr_tail:
-            print("🧾 FFmpeg son log satırları:")
-            for tail_line in stderr_tail:
-                print(f"   {tail_line}")
+            print(f"🧾 [{sid}] Son FFmpeg logları:")
+            for t in list(stderr_tail)[-5:]:
+                print(f"   [{sid}] {t}")
 
-        write_step_summary(
-            STREAM_TITLE, total_seconds, status="🔴 Bağlantı koptu, tekrar denenecek"
+        with state_lock:
+            state[sid] = {
+                "name": cfg['name'],
+                "title": cfg['title'],
+                "seconds": current_stream_seconds,
+                "status": "🔴 Bağlantı koptu",
+            }
+
+        print(f"⚠️ [{sid}] {RECONNECT_DELAY_SECONDS} saniye sonra yeniden bağlanılıyor...")
+        time.sleep(RECONNECT_DELAY_SECONDS)
+
+
+# ===================== ANA GİRİŞ =====================
+def main():
+    print("=" * 60)
+    print(f"📺 {len(STREAMS)} Bağımsız Canlı Yayın Başlatılıyor")
+    print("=" * 60)
+
+    # Global durum (thread'ler arası paylaşımlı)
+    state = {}
+    state_lock = threading.Lock()
+
+    # Her yayın için bağımsız thread
+    threads = []
+    for cfg in STREAMS:
+        t = threading.Thread(
+            target=run_single_stream,
+            args=(cfg, state, state_lock),
+            daemon=True,
+            name=f"stream-{cfg['id']}"
         )
+        t.start()
+        threads.append(t)
+        time.sleep(1)  # Başlangıçta küçük bir staggered start
 
-        # Hızlı çökme tespiti
-        if total_seconds < 20:
-            consecutive_failures += 1
-        else:
-            consecutive_failures = 0
+    # Ana thread: periyodik olarak step summary yaz + genel durum logla
+    try:
+        while True:
+            time.sleep(30)
+            with state_lock:
+                snapshot = dict(state)
+            write_step_summary(snapshot)
 
-        # Exponential backoff
-        if consecutive_failures > 0:
-            retry_delay = min(
-                BASE_RETRY_DELAY_SECONDS * (2 ** consecutive_failures),
-                MAX_RETRY_DELAY_SECONDS,
-            )
-        else:
-            retry_delay = BASE_RETRY_DELAY_SECONDS
-
-        print(f"⚠️ {retry_delay} saniye sonra tekrar bağlanılıyor...")
-        time.sleep(retry_delay)
+            # Genel durum satırı
+            alive = sum(1 for t in threads if t.is_alive())
+            print(f"📊 Genel Durum: {alive}/{len(STREAMS)} yayın thread'i aktif.")
+            for sid in sorted(snapshot.keys()):
+                s = snapshot[sid]
+                print(
+                    f"   [{sid}] {s.get('status','-'):<20} "
+                    f"süre={format_hms(s.get('seconds', 0))}"
+                )
+    except KeyboardInterrupt:
+        print("🛑 Kullanıcı tarafından durduruldu.")
+        sys.exit(0)
 
 
 if __name__ == "__main__":
-    start_stream()
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("🛑 Kullanıcı tarafından durduruldu.")
+        sys.exit(0)
